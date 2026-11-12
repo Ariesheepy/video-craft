@@ -50,7 +50,6 @@ scripts/install.sh    装到 ~/.dsh/skills/
 ## 装
 
 ```bash
-# 把下面这行的 Ariesheepy 换成仓库所有者的 GitHub 用户名（就是 github.com/Ariesheepy 那一段）
 git clone https://github.com/Ariesheepy/video-craft.git
 cd video-craft
 bash scripts/install.sh        # 拷到 ~/.dsh/skills/video-craft
