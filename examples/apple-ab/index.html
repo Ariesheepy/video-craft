@@ -1,8 +1,30 @@
 <!doctype html>
 <html lang="zh-CN">
+<!--
+  video-craft 参考实现（J 版）
+  ─────────────────────────────────────────────────────────────
+  这不是一个能直接双击打开的视频，而是一个"逐帧渲染页"：
+  它只提供三样东西给渲染器：
+    window.DUR   = 15            片长（秒）
+    window.READY = Promise       字体/图片就绪
+    window.render(t)             画出第 t 秒这一帧
+  另外提供两个给体检工具的接口：
+    window.TEXTS(t)              文字包围盒（tools/metrics.mjs 用）
+    window.CAM(t)                {x,y,zoom,rot}（tools/metrics.mjs 用）
+
+  怎么渲：
+    A. 装了 lemo-opuscar：
+       node <lemo>/core/render/still.mjs "<本目录>" 0.9 6.2 12.2 --out stills
+       node <lemo>/core/render/video.mjs "<本目录>" --fps 24 --out out.mp4
+    B. 没有 lemo：用 Playwright 打开本页，按 t 逐帧截图，再
+       ffmpeg -framerate 24 -i f%05d.png -c:v libx264 -pix_fmt yuv420p out.mp4
+
+  想改内容：搜 const BOARD / HEXC / REDC / WIN / SEC / SUBS。
+-->
+
 <head>
 <meta charset="utf-8">
-<title>赤曜 · F（固定机位 / 单件动作）</title>
+<title>赤曜 · J（走廊 + 拍点对齐 + 克制运镜）— video-craft 参考实现</title>
 <style>
   html,body{margin:0;background:#000;overflow:hidden}
   canvas{display:block;width:100vw;height:56.25vw;max-height:100vh;max-width:177.78vh;margin:auto}

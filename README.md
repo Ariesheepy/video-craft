@@ -50,11 +50,16 @@ scripts/install.sh    装到 ~/.dsh/skills/
 ## 装
 
 ```bash
-git clone https://github.com/<you>/video-craft.git
+# 把下面这行的 <用户名> 换成仓库所有者的 GitHub 用户名（就是 github.com/<用户名> 那一段）
+git clone https://github.com/<用户名>/video-craft.git
 cd video-craft
 bash scripts/install.sh        # 拷到 ~/.dsh/skills/video-craft
 # Windows: powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
+
+> 如果你的网络访问 `github.com:443` 会被重置（国内常见），git 可以走 SSH：
+> `git clone git@github.com:<用户名>/video-craft.git`（需要先把公钥加到 GitHub）。
+> 不装 git 也行：下载 ZIP → 解压 → 把 `video-craft/` 放进 `~/.dsh/skills/`。
 
 重启 DSH（或新开会话），技能列表里出现 `video-craft` 就行。
 
@@ -84,6 +89,19 @@ node tools/metrics.mjs "<项目目录>" 0.25
 ## English
 
 **video-craft** is a process gate for AI-made short motion videos, distilled from a 10-version controlled experiment (same copy, palette, type, renderer — only the shooting changed). It ships five hard rules, a case book with the measured numbers, three measurement tools (motion energy, beat grid, structural metrics), and two templates (treatment + shot list). Rules and docs are plain Markdown and work with any agent; `SKILL.md` is in [DeepSeek Harness](https://github.com/) skill format. It is not a renderer — bring your own (Remotion, Playwright + ffmpeg, lemo-opuscar, …).
+
+## 发布（仓库所有者）
+
+```bash
+git remote add origin git@github.com:<用户名>/video-craft.git   # SSH（github.com:443 被墙时用这个）
+git push -u origin main
+```
+
+没有 git 的话，`scripts/publish.mjs` 走 GitHub REST API（只连 api.github.com）：
+
+```bash
+GITHUB_TOKEN=ghp_xxx node scripts/publish.mjs --repo video-craft
+```
 
 ## License
 
