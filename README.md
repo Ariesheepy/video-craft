@@ -50,15 +50,15 @@ scripts/install.sh    装到 ~/.dsh/skills/
 ## 装
 
 ```bash
-# 把下面这行的 <用户名> 换成仓库所有者的 GitHub 用户名（就是 github.com/<用户名> 那一段）
-git clone https://github.com/<用户名>/video-craft.git
+# 把下面这行的 Ariesheepy 换成仓库所有者的 GitHub 用户名（就是 github.com/Ariesheepy 那一段）
+git clone https://github.com/Ariesheepy/video-craft.git
 cd video-craft
 bash scripts/install.sh        # 拷到 ~/.dsh/skills/video-craft
 # Windows: powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
 
 > 如果你的网络访问 `github.com:443` 会被重置（国内常见），git 可以走 SSH：
-> `git clone git@github.com:<用户名>/video-craft.git`（需要先把公钥加到 GitHub）。
+> `git clone git@github.com:Ariesheepy/video-craft.git`（需要先把公钥加到 GitHub）。
 > 不装 git 也行：下载 ZIP → 解压 → 把 `video-craft/` 放进 `~/.dsh/skills/`。
 
 重启 DSH（或新开会话），技能列表里出现 `video-craft` 就行。
@@ -93,7 +93,7 @@ node tools/metrics.mjs "<项目目录>" 0.25
 ## 发布（仓库所有者）
 
 ```bash
-git remote add origin git@github.com:<用户名>/video-craft.git   # SSH（github.com:443 被墙时用这个）
+git remote add origin git@github.com:Ariesheepy/video-craft.git   # SSH（github.com:443 被墙时用这个）
 git push -u origin main
 ```
 
