@@ -1,0 +1,13 @@
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+.pylibs/
+*.mp4
+*.wav
+*.mp3
+stills/
+out.mp4
+film.mp4
+.DS_Store
+Thumbs.db

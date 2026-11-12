@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>赤曜 · F（固定机位 / 单件动作）</title>
+<style>
+  html,body{margin:0;background:#000;overflow:hidden}
+  canvas{display:block;width:100vw;height:56.25vw;max-height:100vh;max-width:177.78vh;margin:auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// ─────────────────────────────────────────────────────────────
+// E 版：机位完全不动。所有元素的加入与消失都要在画面内交代清楚。
+// 两种语法交替使用：
+//   ① 从画面四边进出（滑入 / 落下 / 升起 / 抽出）
+//   ② 被一根滚墨条「印上」或「擦掉」——同一根条子既负责出现也负责消失
+// ─────────────────────────────────────────────────────────────
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const W = 1920, H = 1080, DUR = 15;
+
+const PAPER = '#EDE4D0';
+const INK   = '#141210';
+const RED   = '#D52B1E';
+const DIM   = 'rgba(20,18,16,.55)';
+
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const PB   = (t, a, b) => clamp01((t - a) / (b - a));
+const ease = p => p < .5 ? 2*p*p : 1 - Math.pow(-2*p+2, 2)/2;
+const easeOut = p => 1 - Math.pow(1-p, 3);
+const easeIn  = p => p*p*p;
+const back  = p => { const c = 1.5; return 1 + (c+1)*Math.pow(p-1,3) + c*Math.pow(p-1,2); };
+
+// ── 纸与墨 ────────────────────────────────────────────────────
+let grain = null, dots = null;
+function makeGrain(){
+  const n = document.createElement('canvas'); n.width = W; n.height = H;
+  const g = n.getContext('2d'), img = g.createImageData(W, H);
+  for (let i = 0; i < img.data.length; i += 4){
+    const v = 120 + Math.random()*110;
+    img.data[i] = v; img.data[i+1] = v*0.97; img.data[i+2] = v*0.88;
+    img.data[i+3] = Math.random()*26;
+  }
+  g.putImageData(img, 0, 0); return n;
+}
+function makeDots(){
+  const n = document.createElement('canvas'); n.width = 96; n.height = 96;
+  const g = n.getContext('2d');
+  g.fillStyle = 'rgba(20,18,16,.10)';
+  g.beginPath(); g.arc(48, 48, 1.7, 0, 7); g.fill();
+  return n;
+}
+if (!grain) grain = makeGrain();
+if (!dots)  dots  = makeDots();
+
+function paperBase(){
+  X.fillStyle = PAPER; X.fillRect(0, 0, W, H);
+  const g = X.createRadialGradient(W*0.46, H*0.44, 120, W*0.5, H*0.5, W*0.78);
+  g.addColorStop(0, 'rgba(255,252,244,.55)');
+  g.addColorStop(1, 'rgba(78,64,42,.30)');
+  X.fillStyle = g; X.fillRect(0, 0, W, H);
+  // 网点：给固定的空画面一点可读的材质
+  X.save(); X.globalAlpha = .5;
+  const p = X.createPattern(dots, 'repeat');
+  X.fillStyle = p; X.fillRect(0, 0, W, H); X.restore();
+}
+function paperGrain(t){
+  X.save(); X.globalCompositeOperation = 'multiply'; X.globalAlpha = .42;
+  const ox = (t * 37) % W, oy = (t * 23) % H;
+  X.drawImage(grain, -ox, -oy, W, H); X.restore();
+  X.save(); X.globalAlpha = .12; X.drawImage(grain, ox*0.4 - W, -oy*0.6, W, H); X.restore();
+}
+
+// ── 镜头：只呼吸，不承担引导 ───────────────────────────────────
+// 走廊：灭点固定在 (960, 545)，透视因子线性增长 = 恒速前进，无缓动、无反向
+const VPX = 960, VPY = 640;   // 灭点落到地平线，透视线只穿过画面下半，不切内容
+const SPEED = 0.0092;
+const kPush = t => 0.940 + SPEED * t;
+// 焦点关键帧：只在"换重点"的那一拍之间移动，smoothstep，峰值速度 < 350 px/s
+const CAMX = [
+  [0.00, 960], [1.49, 936], [2.23, 930], [3.72, 950], [5.20, 948],
+  [5.94, 962], [9.66, 956], [10.40, 934], [12.63, 940], [15.00, 960]
+];
+const CAMY = [ [0, 538], [2.23, 540], [9.66, 539], [12.63, 541], [15.00, 536] ];
+const CAMZ = [ [0, 1.000], [1.49, 1.026], [2.23, 1.034], [3.72, 1.010], [5.20, 1.022],
+               [5.94, 1.014], [9.66, 1.028], [10.40, 1.034], [12.63, 1.012], [15.00, 1.002] ];
+function keyed(keys, t){
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++){
+    if (t <= keys[i][0]){
+      const a = keys[i-1], b = keys[i];
+      const u = (t - a[0]) / (b[0] - a[0]);
+      return a[1] + (b[1] - a[1]) * (u*u*(3 - 2*u));
+    }
+  }
+  return keys[keys.length-1][1];
+}
+function camAt(t){
+  return { x: keyed(CAMX, t), y: keyed(CAMY, t), z: keyed(CAMZ, t), r: 0 };
+}
+function drawCorridor(t){
+  const k = kPush(t);
+  X.save();
+  X.strokeStyle = 'rgba(20,18,16,.055)'; X.lineWidth = 2;
+  const bottom = H + 90;
+  for (let i = -7; i <= 7; i++){
+    const xe = VPX + i * 420;
+    X.beginPath(); X.moveTo(VPX, VPY); X.lineTo(xe, bottom); X.stroke();
+  }
+  X.strokeStyle = 'rgba(20,18,16,.035)';
+  for (let i = -5; i <= 5; i++){
+    const xu = VPX + i * 560;
+    X.beginPath(); X.moveTo(VPX, VPY); X.lineTo(xu, -70); X.stroke();
+  }
+  const phase = (k - 0.94) * 3.6;
+  for (let i = 0; i < 22; i++){
+    const u = ((i / 22) + phase) % 1;
+    const yy = VPY + (bottom - VPY) * Math.pow(u, 2.9);
+    if (yy > H + 40 || yy < VPY + 6) continue;
+    const hw = (yy - VPY) * 2.35;
+    X.strokeStyle = 'rgba(20,18,16,' + (0.17 * u).toFixed(3) + ')';
+    X.lineWidth = 1.4 + 3.4 * u;
+    X.beginPath(); X.moveTo(Math.max(-40, VPX - hw), yy); X.lineTo(Math.min(W + 40, VPX + hw), yy); X.stroke();
+  }
+  X.restore();
+}
+let TT = 0;
+function place(ax, ay, fn){
+  const c = camAt(TT), k = c.z;
+  const sx = 960 + (ax - c.x) * k;
+  const sy = 540 + (ay - c.y) * k;
+  X.save();
+  X.translate(960, 540); X.rotate(c.r * Math.PI / 180); X.translate(-960, -540);
+  X.translate(sx, sy); X.scale(k, k); X.translate(-ax, -ay);
+  fn();
+  X.restore();
+}
+function w2s(x, y){
+  const c = camAt(TT), k = c.z;
+  const th = c.r * Math.PI / 180, co = Math.cos(th), si = Math.sin(th);
+  const dx = x - c.x, dy = y - c.y;
+  return { x: 960 + (dx*co - dy*si) * k, y: 540 + (dx*si + dy*co) * k };
+}
+
+// ── 字幕条（固定在屏幕上，永远不动）──────────────────────────────
+const SUBS = [
+  { t: 0.00,  s: '七号品系 · AVEL R-07 · 虚构品种' },
+  { t: 3.715, s: '主色 #D52B1E · 全片只用这一种红' },
+  { t: 9.659, s: '三个视图 · 同一枚果的不同切面' }
+];
+function drawSubs(t){
+  let i = 0;
+  for (let k = 0; k < SUBS.length; k++) if (t >= SUBS[k].t) i = k;
+  const a = SUBS[i], b = SUBS[i+1];
+  let txt = a.s, slide = 0;
+  if (b){
+    const p = clamp01((t - (b.t - 0.30)) / 0.30);
+    if (p > 0){ txt = b.s; slide = (1 - easeOut(p)) * 18; }
+  }
+  // 落版升起时字幕条让位（HUD 层，不属于世界）
+  const off = easeOut(clamp01((t - 12.25) / 0.45));
+  if (off >= 1) return;
+  X.save();
+  X.globalAlpha = 0.96 * (1 - off);
+  X.translate(0, -26 * off);
+  X.fillStyle = 'rgba(20,18,16,.86)';
+  X.fillRect(150, 996, 1620, 50);
+  text(txt, 176, 1031 + slide, 26, PAPER, { weight: 700 });
+  X.restore();
+}
+
+// ── 滚墨条 ───────────────────────────────────────────────────
+// sw = 一次扫掠：{t0,dur,dir}  dir=1 左→右，-1 右→左
+function sweepAt(sw, t){
+  const p = PB(t, sw.t0, sw.t0 + sw.dur);
+  if (p <= 0 || p >= 1) return null;
+  const e = ease(p);
+  return sw.dir > 0 ? e * (W + 220) - 110 : (W + 110) - e * (W + 220);
+}
+function drawBand(x, strong){
+  if (x == null) return;
+  // 拖墨的尾巴
+  const g = X.createLinearGradient(x - 150, 0, x, 0);
+  g.addColorStop(0, 'rgba(213,43,30,0)');
+  g.addColorStop(1, 'rgba(213,43,30,.22)');
+  X.fillStyle = g; X.fillRect(x - 150, 0, 150, H);
+  X.fillStyle = RED; X.fillRect(x - 26, 0, 26, H);
+  X.fillStyle = INK; X.fillRect(x, 0, 9, H);
+  if (strong){
+    X.fillStyle = 'rgba(237,228,208,.65)';
+    for (let i = 0; i < 26; i++){
+      const yy = (i * 71) % H;
+      X.fillRect(x - 26 + (i%3)*8, yy, 2, 34);
+    }
+  }
+}
+
+// ── 苹果（与 B/C/D 同一套轮廓）────────────────────────────────
+function applePath(cx, cy, h, sx){
+  const w = h * 0.62 * (sx == null ? 1 : sx), d = h * 0.5;
+  X.beginPath();
+  X.moveTo(cx, cy - d*0.72);
+  X.bezierCurveTo(cx - w*0.55, cy - d*1.02, cx - w*1.28, cy - d*0.28, cx - w*1.16, cy + d*0.22);
+  X.bezierCurveTo(cx - w*1.06, cy + d*0.78, cx - w*0.42, cy + d*0.96, cx, cy + d*0.84);
+  X.bezierCurveTo(cx + w*0.42, cy + d*0.96, cx + w*1.06, cy + d*0.78, cx + w*1.16, cy + d*0.22);
+  X.bezierCurveTo(cx + w*1.28, cy - d*0.28, cx + w*0.55, cy - d*1.02, cx, cy - d*0.72);
+  X.closePath();
+}
+function halftone(cx, cy, h, sx){
+  X.save(); applePath(cx, cy, h, sx); X.clip();
+  for (let i = -18; i < 24; i++){
+    for (let j = -18; j < 24; j++){
+      const xx = cx + i*13, yy = cy + j*13;
+      const d = Math.hypot((xx - cx)/(h*0.34), (yy - cy)/(h*0.42));
+      if (d > 1.02) continue;
+      X.globalAlpha = 0.55 * (1.05 - d*0.6);
+      X.fillStyle = INK; X.beginPath(); X.arc(xx, yy, 2.6, 0, 7); X.fill();
+    }
+  }
+  X.restore();
+}
+function stemLeaf(cx, cy, h){
+  X.save(); X.strokeStyle = INK; X.fillStyle = INK; X.lineCap = 'round';
+  X.lineWidth = Math.max(4, h*0.026);
+  X.beginPath(); X.moveTo(cx + h*0.02, cy - h*0.34);
+  X.quadraticCurveTo(cx + h*0.01, cy - h*0.52, cx + h*0.07, cy - h*0.62); X.stroke();
+  X.beginPath();
+  X.moveTo(cx + h*0.06, cy - h*0.60);
+  X.quadraticCurveTo(cx + h*0.22, cy - h*0.74, cx + h*0.30, cy - h*0.58);
+  X.quadraticCurveTo(cx + h*0.18, cy - h*0.52, cx + h*0.06, cy - h*0.60);
+  X.closePath(); X.fill(); X.restore();
+}
+function gloss(cx, cy, h, sx){
+  X.save(); X.strokeStyle = 'rgba(237,228,208,.85)'; X.lineCap = 'round';
+  X.lineWidth = Math.max(3, h*0.018);
+  X.beginPath(); X.moveTo(cx - h*0.28*(sx||1), cy - h*0.16);
+  X.quadraticCurveTo(cx - h*0.34*(sx||1), cy + h*0.06, cx - h*0.27*(sx||1), cy + h*0.20);
+  X.stroke(); X.restore();
+}
+function appleFront(cx, cy, h, sx){
+  const fx = sx == null ? 1 : sx;
+  X.save();
+  applePath(cx, cy, h, fx);
+  X.fillStyle = RED; X.fill();
+  if (h > 270){
+    X.save(); applePath(cx, cy, h, fx); X.clip();
+    X.strokeStyle = 'rgba(20,18,16,.42)'; X.lineWidth = h*0.022;
+    X.beginPath(); X.ellipse(cx + h*0.16, cy, h*0.30, h*0.40, 0, 0, 7); X.stroke(); X.restore();
+  }
+  X.lineWidth = Math.max(6, h*0.036); X.strokeStyle = INK; applePath(cx, cy, h, fx); X.stroke();
+  stemLeaf(cx, cy, h); gloss(cx, cy, h, fx);
+  X.restore();
+}
+function appleSide(cx, cy, h){
+  X.save();
+  applePath(cx, cy, h, 0.56);
+  X.fillStyle = RED; X.fill();
+  X.save(); applePath(cx, cy, h, 0.56); X.clip();
+  X.save(); X.scale(1.9, 1); X.translate(-cx*0.47, 0);
+  halftone(cx*1.0, cy, h*1.05, 0.56); X.restore(); X.restore();
+  X.lineWidth = Math.max(5, h*0.028); X.strokeStyle = INK; applePath(cx, cy, h, 0.56); X.stroke();
+  stemLeaf(cx, cy, h); gloss(cx, cy, h, 0.6);
+  X.restore();
+}
+function appleTop(cx, cy, h){
+  const r = h*0.42;
+  X.save();
+  X.fillStyle = RED; X.beginPath(); X.arc(cx, cy, r, 0, 7); X.fill();
+  X.save(); X.beginPath(); X.arc(cx, cy, r, 0, 7); X.clip();
+  halftone(cx, cy, h*1.05, 1); X.restore();
+  X.strokeStyle = INK; X.lineWidth = Math.max(6, h*0.03);
+  X.beginPath(); X.arc(cx, cy, r, 0, 7); X.stroke();
+  X.lineWidth = Math.max(2, r*0.05); X.strokeStyle = 'rgba(237,228,208,.9)';
+  for (let i = 0; i < 7; i++){
+    const a = -1.15 + i*0.34;
+    X.beginPath(); X.moveTo(cx, cy);
+    X.lineTo(cx + Math.cos(a)*r*0.96, cy + Math.sin(a)*r*0.96); X.stroke();
+  }
+  X.fillStyle = INK; X.beginPath(); X.arc(cx, cy, r*0.10, 0, 7); X.fill();
+  X.fillStyle = PAPER; X.beginPath(); X.arc(cx, cy, r*0.035, 0, 7); X.fill();
+  X.restore();
+}
+function appleSection(cx, cy, h){
+  const sx = 0.8;
+  X.save();
+  X.lineWidth = Math.max(7, h*0.042); X.strokeStyle = RED; applePath(cx, cy, h, sx); X.stroke();
+  X.lineWidth = Math.max(2.5, h*0.014); X.strokeStyle = INK;
+  applePath(cx, cy, h*0.965, sx); X.stroke();
+  // 心室
+  X.save();
+  X.translate(cx, cy + h*0.02);
+  X.scale(1, 1.32);
+  X.beginPath(); X.ellipse(0, 0, h*0.10, h*0.15, 0, 0, 7);
+  X.strokeStyle = INK; X.lineWidth = Math.max(2.5, h*0.014); X.stroke();
+  X.fillStyle = INK;
+  [[-0.045,-0.05],[0.045,-0.05],[-0.045,0.05],[0.045,0.05]].forEach(([x, y]) => {
+    X.beginPath(); X.ellipse(h*x, h*y*1.2, h*0.016, h*0.026, 0, 0, 7); X.fill();
+  });
+  X.restore();
+  stemLeaf(cx, cy, h*1.02);
+  X.restore();
+}
+
+// ── 文字 ─────────────────────────────────────────────────────
+function font(px, weight, fam){ return `${weight || 900} ${px}px ${fam || '"Noto Sans SC","Noto Sans CJC",sans-serif'}`; }
+function text(s, x, y, px, color, o){
+  o = o || {};
+  X.save();
+  X.font = font(px, o.weight, o.fam);
+  X.fillStyle = color || INK;
+  X.textBaseline = o.base || 'alphabetic';
+  X.textAlign = o.align || 'left';
+  if (o.tracking) X.letterSpacing = o.tracking;
+  X.fillText(s, x, y);
+  X.restore();
+}
+function mono(s, x, y, px, color, o){
+  o = Object.assign({ weight: 700, fam: '"Consolas","Courier New",monospace' }, o || {});
+  text(s, x, y, px, color, o);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 与 E 版的分别：
+//   E：一根滚墨条横扫整个画面 —— 那本质上是「转场」，只是画成一条线。
+//   F：没有全屏装置。每件东西都是一张实物（牌 / 纸卡 / 窗 / 台纸），
+//      自己从某条边界进来、自己从某条边界出去，各走各的时间；
+//      印字用小刮刀，只在那一件东西的尺度上走一趟，用完就抬走。
+// ─────────────────────────────────────────────────────────────
+
+// 一件东西：位置 + 角度 + 起止
+function card(o){
+  const enter = o.enter ? back(PB(t, o.enter.t0, o.enter.t0 + o.enter.dur)) : 1;
+  const exit  = o.exit  ? easeIn(PB(t, o.exit.t0,  o.exit.t0  + o.exit.dur))  : 0;
+  return { enter, exit };
+}
+
+// 小刮刀：在某一件事的尺度上走一趟
+// 进场：从卡片上方落下；走：横穿卡片；离场：抬起来走
+function squeegee(t, sc){
+  if (t < sc.t0) return null;
+  if (t > sc.t1) return null;
+  const down = easeOut(PB(t, sc.t0, sc.t0 + 0.20));
+  const up   = easeIn (PB(t, sc.t1 - 0.20, sc.t1));
+  const run  = ease  (PB(t, sc.t0 + 0.14, sc.t1 - 0.20));
+  const x = sc.x0 + (sc.x1 - sc.x0) * run;
+  const dy = (1 - down) * -150 + up * -150;
+  return { x, dy, alpha: 1 - up };
+}
+function drawSqueegee(t, sc, cardY, cardH, ox){
+  const g = squeegee(t, sc);
+  if (!g) return null;
+  ox = ox || 0; g.x += ox;
+  X.save();
+  X.translate(0, g.dy);
+  X.globalAlpha = g.alpha;
+  // 拖痕
+  const gr = X.createLinearGradient(g.x - 90, 0, g.x, 0);
+  gr.addColorStop(0, 'rgba(213,43,30,0)');
+  gr.addColorStop(1, 'rgba(213,43,30,.20)');
+  X.fillStyle = gr; X.fillRect(g.x - 90, cardY - 10, 90, cardH + 20);
+  X.fillStyle = RED; X.fillRect(g.x - 16, cardY - 14, 16, cardH + 28);
+  X.fillStyle = INK; X.fillRect(g.x, cardY - 14, 6, cardH + 28);
+  X.fillStyle = 'rgba(237,228,208,.5)';
+  for (let i = 0; i < 10; i++) X.fillRect(g.x - 14, cardY + (i * 47) % cardH, 2, 22);
+  X.restore();
+  return g;
+}
+
+// ① 名牌：过左边界进来，过左边界出去
+const BOARD = { x: 120, y: 268, w: 520, h: 420 };
+function drawBoard(t){
+  const p = PB(t, 0.743, 1.486), q = PB(t, 5.201, 5.944);
+  if (p <= 0 || q >= 1) return;
+  const e = back(p), o = easeIn(q);
+  const bx = BOARD.x - 700 * (1 - e) - 760 * o;
+  const by = BOARD.y + Math.sin(e * Math.PI) * 10;
+  X.save();
+  X.translate(bx + BOARD.w/2, by + BOARD.h/2);
+  X.rotate(-0.018 - 0.012 * o);
+  X.translate(-BOARD.w/2, -BOARD.h/2);
+  X.fillStyle = RED; X.fillRect(0, 0, BOARD.w, BOARD.h);
+  X.fillStyle = 'rgba(20,18,16,.20)'; X.fillRect(0, BOARD.h - 8, BOARD.w, 8);
+
+  const sc = { t0: 1.486, t1: 2.229, x0: -30, x1: BOARD.w + 40 };
+  const g = squeegee(t, sc);
+  const px = t > sc.t1 ? BOARD.w : (g ? g.x : -1);
+  if (px > 0){
+    X.save(); X.beginPath(); X.rect(0, 0, Math.min(BOARD.w, px), BOARD.h); X.clip();
+    text('赤曜', 44, 292, 124, PAPER);
+    mono('AVEL R-07', 48, 348, 38, PAPER, { weight: 700 });
+    text('七号品系 · 单一红墨', 48, 392, 21, 'rgba(237,228,208,.8)', { weight: 400 });
+    X.restore();
+  }
+  X.restore();
+  drawSqueegee(t, sc, by, BOARD.h, BOARD.x);
+}
+
+// ② 色号卡：一张纸卡，从右边界推进来；用完从右边界推走
+const HEXC = { x: 690, y: 372, w: 574, h: 286 };
+function drawHexCard(t){
+  const p = PB(t, 2.229, 2.972), q = PB(t, 5.201, 5.944);
+  if (p <= 0 || q >= 1) return;
+  const e = easeOut(p), o = easeIn(q);
+  const x = HEXC.x + 30 * (1 - e) + 620 * o;
+  const y = HEXC.y - 4 * Math.sin(e * Math.PI);
+  const kk = 0.40 + 0.60 * e;
+  X.save();
+  X.translate(VPX, VPY); X.scale(kk, kk); X.translate(-VPX, -VPY);
+  X.translate(x + HEXC.w/2, y + HEXC.h/2); X.rotate(0.012); X.translate(-HEXC.w/2, -HEXC.h/2);
+  X.fillStyle = '#F4ECDB'; X.fillRect(0, 0, HEXC.w, HEXC.h);
+  X.fillStyle = 'rgba(20,18,16,.16)'; X.fillRect(0, HEXC.h - 7, HEXC.w, 7);
+
+  const sc = { t0: 2.820, t1: 3.560, x0: -30, x1: HEXC.w + 40 };
+  const g = squeegee(t, sc);
+  const px = t > sc.t1 ? HEXC.w : (g ? g.x : -1);
+  if (px > 0){
+    X.save(); X.beginPath(); X.rect(0, 0, Math.min(HEXC.w, px), HEXC.h); X.clip();
+    text('主色', 30, 72, 30, INK);
+    mono('DOMINANT INK', 32, 100, 18, DIM, { weight: 700 });
+    text('#D52B1E', 24, 232, 104, RED);
+    X.restore();
+  }
+  X.restore();
+  X.restore();
+  X.save();
+  X.translate(VPX, VPY); X.scale(kk, kk); X.translate(-VPX, -VPY);
+  drawSqueegee(t, sc, y, HEXC.h, 0);
+  X.restore();
+}
+
+// ③ 红卡：从下边界升上来，从右边界推走
+const REDC = { x: 1440, y: 316, s: 280 };
+function drawRedCard(t){
+  const p = PB(t, 3.715, 4.458), q = PB(t, 5.201, 5.944);
+  if (p <= 0 || q >= 1) return;
+  const e = back(p), o = easeIn(q);
+  const x = REDC.x + 660 * o;
+  const y = REDC.y + 640 * (1 - e);
+  X.save();
+  X.translate(x + REDC.s/2, y + REDC.s/2);
+  X.rotate(-0.02 + 0.03 * o);
+  X.translate(-REDC.s/2, -REDC.s/2);
+  X.fillStyle = RED; X.fillRect(0, 0, REDC.s, REDC.s);
+  X.fillStyle = 'rgba(20,18,16,.18)'; X.fillRect(0, REDC.s - 8, REDC.s, 8);
+  // 纸签：从卡的上缘抽出来
+  const tp = easeOut(PB(t, 4.458, 4.85));
+  if (tp > 0){
+    X.save(); X.translate(-10, -60);
+    X.fillStyle = PAPER; X.fillRect(0, 0, REDC.s + 26, 46 * tp);
+    X.restore();
+    if (tp > 0.6) mono('CMYK 0 / 94 / 100 / 6', -4, -26, 18, INK, { weight: 700 });
+  }
+  const bp = easeOut(PB(t, 4.70, 5.10));
+  if (bp > 0){
+    X.save(); X.translate(44, REDC.s + 16);
+    X.fillStyle = PAPER; X.fillRect(0, 0, 178, 42 * bp);
+    X.restore();
+    if (bp > 0.6) text('一种红', 56, REDC.s + 46, 24, INK);
+  }
+  X.restore();
+}
+
+// ④ 三视图：三扇窗，各自由上缘落下、各自向右缘走
+const WIN = [
+  { cx: 830,  c: 'appleFront', label: '正视图', en: 'FRONT', i: 0 },
+  { cx: 1190, c: 'appleSide',  label: '侧视图', en: 'SIDE',  i: 1 },
+  { cx: 1550, c: 'appleTop',   label: '俯视图', en: 'TOP',   i: 2 }
+];
+function drawViews(t){
+  WIN.forEach(w => {
+    const inT = 5.944 + w.i*0.19, outT = 9.659 + w.i*0.18;
+    const p = PB(t, inT, inT + 0.74), q = PB(t, outT, outT + 0.70);
+    if (p <= 0 || q >= 1) return;
+    const e = back(p), o = easeIn(q);
+    const ww = 300, wh = 380;
+    const x = w.cx - ww/2 + 760 * o;
+    const y = 290 - 640 * (1 - e) - 30 * o;
+    X.save();
+    X.fillStyle = INK; X.fillRect(x, y, ww, wh);
+    // 窗内：小刮刀自上而下一趟，把苹果印出来
+    const sc = { t0: inT + 0.40, t1: inT + 1.05, x0: -40, x1: ww + 40 };
+    const g = squeegee(t, sc);
+    const pv = t > sc.t1 ? ww : (g ? g.x : -1);
+    if (pv > 0){
+      X.save();
+      X.beginPath(); X.rect(x, y, Math.min(ww, pv), wh); X.clip();
+      X.beginPath(); X.rect(x, y, ww, wh); X.clip();
+      if (w.c === 'appleFront') appleFront(w.cx, y + wh*0.54, 224, 0.86);
+      if (w.c === 'appleSide')  appleSide(w.cx, y + wh*0.54, 250);
+      if (w.c === 'appleTop')   appleTop(w.cx, y + wh*0.50, 250);
+      X.restore();
+    }
+    X.fillStyle = RED; X.fillRect(x + 22, y + 22, 12, 12);
+    mono('0' + (w.i+1), x + 46, y + 37, 24, RED, { weight: 700 });
+    // 窗框
+    X.strokeStyle = 'rgba(237,228,208,.18)'; X.lineWidth = 2;
+    X.strokeRect(x + 1, y + 1, ww - 2, wh - 2);
+    X.restore();
+    // 窗内小刮刀（画在窗之上，但只在窗的范围里）
+    if (g){
+      X.save();
+      X.beginPath(); X.rect(x - 30, y - 40, ww + 60, wh + 80); X.clip();
+      drawSqueegee(t, sc, y, wh, x - x);
+      X.restore();
+    }
+    // 标签从窗下缘抽出
+    const lp = easeOut(PB(t, inT + 0.98, inT + 1.28));
+    if (lp > 0){
+      X.save();
+      X.globalAlpha = 1 - o;
+      X.beginPath(); X.rect(x - 10, y + wh, 320, 92 * lp); X.clip();
+      text(w.label, x, y + wh + 48 * lp, 38, INK);
+      mono(w.en, x + 2, y + wh + 82 * lp, 19, DIM, { weight: 700 });
+      X.restore();
+    }
+  });
+}
+
+// ⑤ 剖面台纸：一整张纸从下缘升上来，画完再落回去（对称的收起）
+const SEC = { x: 236, y: 232, w: 1290, h: 640 };
+function drawSection(t){
+  const p = PB(t, 10.402, 11.145), q = PB(t, 12.631, 13.374);
+  if (p <= 0 || q >= 1) return;
+  const e = back(p), o = easeIn(q);
+  const dx = 18 * (1 - e);
+  const dy = 720 * (1 - e) + 780 * o;
+  X.save();
+  X.translate(dx, dy);
+  X.globalAlpha = 1;
+  // 台纸（比纸底略亮，给"抬起来的一张"）
+  X.fillStyle = '#F3EBD9';
+  X.fillRect(SEC.x, SEC.y, SEC.w, SEC.h);
+  X.fillStyle = 'rgba(20,18,16,.16)';
+  X.fillRect(SEC.x, SEC.y + SEC.h - 7, SEC.w, 7);
+  X.strokeStyle = 'rgba(20,18,16,.10)'; X.lineWidth = 2;
+  X.strokeRect(SEC.x + 1, SEC.y + 1, SEC.w - 2, SEC.h - 2);
+
+  const cx = SEC.x + 340, cy = SEC.y + 300, h = 440;
+  appleSection(cx, cy, h);
+  // 台沿
+  const tp = easeOut(PB(t, 11.15, 11.60));
+  X.fillStyle = 'rgba(20,18,16,.5)';
+  X.fillRect(cx - 380, cy + h*0.46 + 34, 780 * tp, 5);
+
+  const L = [
+    { t: 11.145, y: cy - h*0.26, sx: 226, w: 300, s: '果皮：唯一上色部位' },
+    { t: 11.640, y: cy + h*0.02, sx: 158, w: 300, s: '果肉：纸白，只有一半调' },
+    { t: 12.135, y: cy + h*0.26, sx: 54, w: 330, s: '果核：墨线，四室' }
+  ];
+  L.forEach(a => {
+    const pp = easeOut(PB(t, a.t, a.t + 0.34));
+    if (pp <= 0) return;
+    const x0 = cx + a.sx, x1 = x0 + a.w * pp;
+    X.strokeStyle = INK; X.lineWidth = 2;
+    X.beginPath(); X.moveTo(x0, a.y); X.lineTo(x1, a.y); X.stroke();
+    X.fillStyle = RED; X.beginPath(); X.arc(x0, a.y, 6, 0, 7); X.fill();
+    if (pp > 0.7){
+      X.save(); X.globalAlpha = (pp - 0.7) / 0.3;
+      text(a.s, x1 + 16, a.y + 11, 32, INK);
+      X.restore();
+    }
+  });
+  X.restore();
+}
+
+// ⑥ 落版：一条墨从下缘升上来；字用小刮刀印
+function drawColophon(t){
+  const p = PB(t, 12.631, 13.374);
+  if (p <= 0) return;
+  const e = easeOut(p);
+  const bh = 210, top = H - bh * e;
+  const kk = 0.62 + 0.38 * e;
+  X.save();
+  X.translate(VPX, VPY); X.scale(kk, kk); X.translate(-VPX, -VPY);
+  X.fillStyle = INK; X.fillRect(0, top, W, bh * e);
+  if (e > 0.55){
+    const sc = { t0: 13.374, t1: 14.860, x0: 60, x1: W - 60 };
+    const g = squeegee(t, sc);
+    const px = t > sc.t1 ? W : (g ? g.x : -1);
+    if (px > 0){
+      X.save(); X.beginPath(); X.rect(0, top, px, bh); X.clip();
+      text('一种红 · 一枚果', 150, top + 118, 70, PAPER);
+      mono('#D52B1E   /   AVEL R-07', 152, top + 168, 23, RED, { weight: 700 });
+      mono('七号品系 · 虚构品种 · 规格为演示数据', W - 150, top + 168, 21,
+           'rgba(237,228,208,.55)', { weight: 400, align: 'right' });
+      X.restore();
+    }
+    X.save(); X.beginPath(); X.rect(0, top, W, bh); X.clip();
+    drawSqueegee(t, sc, top - 20, bh + 40);
+    X.restore();
+  }
+  X.restore();
+}
+
+// ── 主循环 ───────────────────────────────────────────────────
+function drawRule(t){
+  const p = easeOut(PB(t, 0.05, 0.95));
+  if (p <= 0) return;
+  X.save();
+  X.fillStyle = RED; X.globalAlpha = 0.92;
+  X.fillRect(120, 892, 1680 * p, 7);
+  X.fillStyle = INK; X.globalAlpha = 0.32;
+  X.fillRect(120, 903, 1680 * p, 2);
+  X.restore();
+}
+function render(t){
+  X.setTransform(1, 0, 0, 1, 0, 0);
+  X.clearRect(0, 0, W, H);
+  TT = t;
+  paperBase();
+  paperGrain(t);
+  drawCorridor(t);
+  place(0, 892, () => drawRule(t));
+  place(BOARD.x, BOARD.y, () => drawBoard(t));
+  place(HEXC.x, HEXC.y,  () => drawHexCard(t));
+  place(REDC.x, REDC.y,  () => drawRedCard(t));
+  place(830, 290, () => drawViews(t));
+  place(SEC.x, SEC.y,    () => drawSection(t));
+  drawColophon(t);
+  drawSubs(t);
+  const v = X.createRadialGradient(W/2, H/2, H*0.42, W/2, H/2, H*0.92);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(40,30,18,.32)');
+  X.fillStyle = v; X.fillRect(0, 0, W, H);
+}
+
+// ── 契约 ─────────────────────────────────────────────────────
+window.DUR = DUR;
+window.CAM = (t) => { const c = camAt(t || 0); return { x: c.x, y: c.y, zoom: c.z, rot: c.r * Math.PI / 180 }; };
+window.SHOTS = [{ id: 'F1', t0: 0, t1: DUR, n: 1 }];
+window.READY = true;
+window.render = render;
+
+window.TEXTS = (t) => {
+  const out = [];
+  const push = (id, s, x, y, px) => {
+    if (!s) return;
+    const w = s.length * px * (id.match(/[A-Za-z#/. ]/) ? 0.58 : 1.02);
+    out.push({ id, text: s, x, y: y - px*0.8, w, h: px*1.1 });
+  };
+  if (t > 2.52 && t < 8.3){
+    push('name', '赤曜', 164, 560, 124);
+    push('avel', 'AVEL R-07', 168, 616, 38);
+  }
+  if (t > 3.92 && t < 5.30){
+    push('hex', '#D52B1E', 714, 604, 104);
+    push('label', '主色', 720, 444, 30);
+  }
+  if (t > 7.4 && t < 8.96){
+    WIN.forEach(w => push('v' + w.i, w.label, w.cx - 150, 720, 38));
+  }
+  if (t > 10.5 && t < 11.9) push('sec', '果皮：唯一上色部位', 900, 470, 32);
+  if (t > 14.2) push('colo', '一种红 · 一枚果', 150, 1010, 70);
+  return out;
+};
+
+render(0);
+</script>
+</body>
+</html>
