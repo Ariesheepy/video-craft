@@ -92,21 +92,25 @@ nav.main a:hover::after{right:0}
   position:fixed;inset:0;z-index:120;background:var(--bg);
   display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;
   padding:26px var(--gut) 0;
-  transition:opacity .7s var(--ease),visibility .7s;
+  transition:opacity .9s var(--ease),visibility .9s;
 }
 #intro.done{opacity:0;visibility:hidden}
+#intro.leaving .istage,
+#intro.leaving .icopy,
+#intro.leaving .ibeat,
+#intro.leaving .ihud{opacity:0;transform:translateY(-14px);transition:opacity .5s var(--ease),transform .5s var(--ease)}
 .ihud{
   display:flex;justify-content:space-between;gap:20px;
   font:10px/1.9 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--dim);
 }
-.ihud em{font-style:normal;color:var(--acc)}
+.ihud em{font-style:normal;color:var(--acc);white-space:nowrap}
 .istage{position:relative;min-height:0;perspective:1400px}
 .ideck{position:absolute;inset:0;transform:scale(var(--ds,1));transform-origin:50% 50%}
 .fr{
   position:absolute;top:50%;left:50%;width:clamp(112px,12.4vw,176px);aspect-ratio:16/9;
   transform:translate(-50%,-50%) translate3d(0,0,-900px) scale(.2);
   opacity:0;border:1px solid var(--hair);background:var(--card);overflow:hidden;
-  transition:transform 1.05s var(--ease),opacity .7s var(--ease),border-color .4s;
+  transition:transform 1.05s var(--ease),opacity .6s var(--ease),border-color .4s;
   will-change:transform,opacity;
 }
 .fr .mk{position:absolute;background:var(--acc);opacity:.9}
@@ -126,9 +130,10 @@ nav.main a:hover::after{right:0}
 .icopy .kick::before{content:"";width:34px;height:1px;background:var(--acc)}
 .icopy h1{
   margin-top:clamp(12px,2.4vh,22px);font-size:clamp(30px,5.4vw,72px);line-height:1.04;letter-spacing:-.045em;font-weight:600;
-  clip-path:inset(0 100% 0 0);transition:clip-path 1.1s var(--ease);
+  opacity:0;transform:translateY(16px);filter:blur(8px);
+  transition:opacity 1s var(--ease),transform 1s var(--ease),filter 1.1s var(--ease);
 }
-.icopy h1.in{clip-path:inset(0 0 0 0)}
+.icopy h1.in{opacity:1;transform:none;filter:none}
 .icopy p{margin-top:12px;font:11px/1.8 var(--mono);letter-spacing:.14em;color:var(--dim);opacity:0;transition:opacity .8s var(--ease)}
 .icopy p.in{opacity:1}
 .ibeat{
@@ -299,6 +304,8 @@ footer .links a:hover{color:var(--acc)}
   footer .row{gap:14px}
   .icopy h1{font-size:clamp(26px,8vw,40px)}
   .istage{min-height:260px}
+  .ihud{font-size:9px;letter-spacing:.12em;gap:12px;line-height:1.7}
+  .ihud span{white-space:nowrap}
 }
 @media(prefers-reduced-motion:reduce){
   *{animation:none!important;transition-duration:.001s!important}
@@ -593,44 +600,48 @@ footer .links a:hover{color:var(--acc)}
         f.style.transform = `translate(-50%,-50%) translate3d(${pos[i].x}px,${pos[i].y}px,0) scale(1)`;
         f.style.borderColor = 'var(--acc)';
         later(() => { f.style.borderColor = ''; }, 420);
-      }, 260 + i * 190);
+      }, 240 + i * 172);
     });
 
-    /* 2) 收成一叠 */
+    /* 2) 收成一叠（不设错峰，整体一起走，避免拖尾） */
     later(() => {
       istep.textContent = '02 / 04';
       imsg.textContent = '10 VERSIONS · 1 TAKE';
       frames.forEach((f, i) => {
-        f.style.transitionDelay = (i * 26) + 'ms';
-        f.style.transform = `translate(-50%,-50%) translate3d(0,0,${-i * 6}px) rotate(${(i - 5) * 1.6}deg) scale(.92)`;
+        f.style.transitionDelay = '0ms';
+        f.style.transform = `translate(-50%,-50%) translate3d(0,0,${-i * 3}px) rotate(${(i - 4.5) * 1.0}deg) scale(.93)`;
       });
-    }, 2620);
+    }, 2380);
 
-    /* 3) 合成一条 */
+    /* 3) 合成一条：放大与淡出同时发生，不留空场 */
     later(() => {
       istep.textContent = '03 / 04';
       imsg.textContent = '0 CUT · 24 FPS · 80.75 BPM';
       frames.forEach((f, i) => {
         if (i === 9) {
           f.style.transitionDelay = '0ms';
-          f.style.transform = 'translate(-50%,-50%) scale(3.1)';
+          f.style.transition = 'transform 1.25s var(--ease), opacity .6s var(--ease), border-color .4s';
+          f.style.transform = 'translate(-50%,-50%) scale(3.05)';
           f.classList.add('hot');
-          setTimeout(() => {
-            f.classList.add('live');
-            introFilm.play().catch(() => {});
-          }, 420);
         } else {
+          f.style.transitionDelay = (i * 12) + 'ms';
+          f.style.transform = `translate(-50%,-50%) translate3d(0,0,${-40 - i * 4}px) scale(.86)`;
           f.style.opacity = '0';
-          f.style.transform = 'translate(-50%,-50%) translate3d(0,0,-120px) scale(.7)';
         }
       });
-      later(() => { ihead.classList.add('in'); }, 320);
-      later(() => { isub.classList.add('in'); }, 900);
-    }, 3520);
+      later(() => {
+        try { introFilm.currentTime = 2.35; } catch (e) {}
+        introFilm.play().catch(() => {});
+        frames[9].classList.add('live');
+      }, 260);
+      later(() => { ihead.classList.add('in'); }, 380);
+      later(() => { isub.classList.add('in'); }, 980);
+    }, 3350);
 
-    /* 4) 收尾 */
-    later(() => { istep.textContent = '04 / 04'; }, 4900);
-    later(finish, reduce ? 1200 : 6500);
+    /* 4) 收尾：内容先退，底板后走，正文最后进场 */
+    later(() => { istep.textContent = '04 / 04'; }, 4700);
+    later(() => { $('#intro').classList.add('leaving'); }, reduce ? 900 : 5150);
+    later(finish, reduce ? 1200 : 5950);
   }
 
   let finished = false;
@@ -638,10 +649,12 @@ footer .links a:hover{color:var(--acc)}
     if (finished) return;
     finished = true;
     clearAll();
-    intro.classList.add('done');
+    try { introFilm.pause(); } catch (e) {}
+    intro.classList.add('leaving');
+    setTimeout(() => { intro.classList.add('done'); }, reduce ? 0 : 60);
     document.body.classList.remove('locked');
-    setTimeout(() => { intro.style.display = 'none'; }, 800);
-    setTimeout(() => { $('#problem').classList.add('in'); }, 260);
+    setTimeout(() => { intro.style.display = 'none'; }, reduce ? 0 : 1000);
+    setTimeout(() => { $('#problem').classList.add('in'); }, reduce ? 0 : 330);
   }
   $('#skip').addEventListener('click', finish);
   addEventListener('keydown', e => { if (e.key === 'Escape') finish(); });
