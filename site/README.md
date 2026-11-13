@@ -1,52 +1,49 @@
-# video-craft · 网站
+# video-craft · 站点
 
-介绍 video-craft 的单页站点。**纯静态**：一个 `index.html` + `assets/`，没有构建步骤、没有依赖、不联网取任何东西。
+单文件落地页，零依赖、零构建。默认浅色，右上角可切深色（记在 `localStorage`）。
 
-## 本地看
+```
+site/
+├── index.html          整站（HTML + CSS + JS 全在里面）
+├── assets/
+│   ├── film-720.mp4    15 秒参考片，1280×720，0.8 MB
+│   └── poster.jpg      视频封面
+└── README.md
+```
+
+## 本地预览
+
+直接双击 `index.html` 也能看，但视频和相对路径建议起一个本地服务：
 
 ```bash
-# 直接双击打开也行，但如果要测视频/相对路径，起个静态服务更稳
 cd site
 python -m http.server 8080
-# 打开 http://127.0.0.1:8080
+# http://127.0.0.1:8080
 ```
 
 ## 部署到 GitHub Pages
 
-仓库里已经带了这一份，路径是 `site/`。步骤（只需一次）：
+1. 仓库 Settings → Pages
+2. Source 选 `Deploy from a branch`
+3. Branch 选 `main`，目录选 `/site` → Save
 
-1. 打开 **Settings → Pages**
-2. **Source** 选 `Deploy from a branch`
-3. **Branch** 选 `main`，目录选 **`/site`**
-4. Save，等 30–60 秒
+约一分钟后：`https://ariesheepy.github.io/video-craft/`
 
-地址：`https://ariesheepy.github.io/video-craft/`
+## 改内容的位置
 
-> 如果链接 404，通常是 Pages 还在构建，或目录选成了 `/root`。改回 `/site` 重新保存即可。
+| 想改什么 | 在哪 |
+| --- | --- |
+| 开场动画（十版 → 一镜） | `index.html` 里 `#intro` 的结构 + JS 的 `playIntro()` |
+| 首屏那句话 | `<section class="hero">` 里的 `h2` |
+| 下载卡片 / 命令 | `<section class="dl">` |
+| 五条规则 | `<section class="rules">` 里的五个 `<article class="rule">` |
+| 署名 | `<section class="who">` 与页脚 |
+| 配色 / 字号 / 间距 | 顶部 `:root` 与 `html[data-theme]` 里的变量 |
 
-## 结构
+## 几个设计决定
 
-```
-index.html          全部内容：样式、章节、交互都在这一份里
-assets/film-720.mp4 参考片 720p（0.8 MB，静音循环，可点开声音）
-assets/poster.jpg   视频封面，也是 og:image
-assets/f-*.jpg      三张静帧，用于「印字 / 读图 / 落版」的证据条
-```
-
-## 改内容
-
-- **十版表**：`index.html` 里 `const V = [...]`，每行 `[版本, 怎么拍, 硬切, 镜长, 中心率]`
-- **五条规则**：`const RULES = [...]`，每行 `[编号, 标题, 正文, 脚注]`
-- **指标 / 文案**：直接改对应章节的 HTML
-- **配色 / 字体**：`:root` 里的 CSS 变量（`--acc` 是那一点橙）
-
-## 设计上的几个决定
-
-- **一屏一件事**：每节占满视口，滚一下换一个意思，不做长文排版。
-- **橙色只用在「当前」**：右侧章节索引、表格里被选中的那几行、播放器角标。其余全是黑白灰。
-- **数字用等宽字体**：所有指标读起来像仪表盘，而不是正文。
-- **尊重 `prefers-reduced-motion`**：关掉动画后仍能读完全部内容。
-
-## 页面自身的指标
-
-作者自用：这页也按 `docs/MOTION-RULES.md` 的读者视角检查过——首屏只有一个焦点，滚动时每屏只有一次位移，运镜（这里是滚动动画）不超过 16px 的入场位移。
+- **一屏一个意思**：全站只有四段（问题 / 下载 / 规则 / 谁做的），每段不超过一屏半，不做十屏滚动。
+- **下载放在第二屏**：参考 motionharness.top 的顺序——先给结论，再给拿走的入口，规则往后放。
+- **开场是自动的**：十个小画框逐个落位，收成一叠，再合成一帧并开始播真实参考片，最后整层淡出。这不只是过场，它演示的正是工具想让你做的事：十版 → 一镜。
+- **深度由变量控制**：`html[data-theme="light"]` / `dark` 两组 token，切主题只换变量，不重排布局。
+- **动效有上限**：入场 22px 位移、滚动只做透明度与位移，`prefers-reduced-motion` 下全部关掉，内容照常可读。
