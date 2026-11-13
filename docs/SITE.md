@@ -3,21 +3,25 @@
 单文件落地页，零依赖、零构建。默认浅色，右上角可切深色（记在 `localStorage`）。
 
 ```
-site/
+docs/
 ├── index.html          整站（HTML + CSS + JS 全在里面）
 ├── .nojekyll           让 GitHub Pages 原样发布，不走 Jekyll
 ├── assets/
 │   ├── film-720.mp4    15 秒参考片，1280×720，0.8 MB
 │   ├── poster.jpg      视频封面
 │   └── og.jpg          分享卡片图（1200×630）
-└── README.md
+├── SITE.md             这份说明
+└── *.md                规则全文 / 证据册 / 模板（站点直接链接它们）
 ```
+
+> GitHub Pages 的「Deploy from a branch」只允许发布 **仓库根目录** 或 **`/docs`**，
+> 所以站点放在 `docs/`，和文档放在一起正好：`/MOTION-RULES.md`、`/MOTION-CASES.md` 也能被直接访问。
 
 ## 一、让它上外网（GitHub Pages，最快）
 
 1. 仓库 **Settings → Pages**
 2. Source 选 `Deploy from a branch`
-3. Branch 选 `main`，目录选 **`/site`** → Save
+3. Branch 选 `main`，目录选 **`/docs`** → Save
 4. 等 30–90 秒，访问 `https://ariesheepy.github.io/video-craft/`
 
 这一步做完，网址就已经是「外部可访问」的了——任何人拿手机 4G 都能打开。只是域名长这样：`ariesheepy.github.io`。
@@ -55,7 +59,7 @@ site/
    A     @     185.199.111.153
    CNAME www   ariesheepy.github.io
    ```
-3. 在仓库里新建文件 `site/CNAME`，内容只有一行你的域名（不带 `https://`）
+3. 在仓库里新建文件 `docs/CNAME`，内容只有一行你的域名（不带 `https://`）
 4. Settings → Pages → Custom domain 填同一域名 → Save → 勾 **Enforce HTTPS**
 
 ### 买域名的小提示
